@@ -1,0 +1,62 @@
+1. Combined Scatter Plot: Advertising vs EPS (Yearly)
+Insight: Weak to moderate positive relationship overall; varies by company
+What the chart shows:
+Each dot = one company's yearly advertising spend vs its calculated annual EPS.
+Each coloured line = regression trend per company.
+Key insights:
+PG (Procter & Gamble) and PEP (PepsiCo) show a positive slope → higher ad spend is generally associated with slightly higher EPS.
+KMB (Kimberly-Clark) also shows a positive correlation, though weaker.
+KO (Coca-Cola) shows a slightly negative slope, suggesting that years with higher marketing spend do not immediately translate into higher EPS for KO.
+CL (Colgate-Palmolive) also shows a mild negative trend → marketing spend might depress margins short-term.
+Overall interpretation:
+Across all firms, there is no uniform relationship — advertising helps some companies grow EPS, but for others, EPS dips in heavy advertising years due to higher expenses.
+
+2. Normalized Time-Series (Z-Scores): Advertising vs EPS Over Time (Yearly)
+Insight: Advertising spikes often lead EPS trends, but the relationship is not perfectly aligned across companies.
+This chart compares standardized advertising spend vs EPS over 2019–2021 for each company.
+CL (Colgate-Palmolive)
+Advertising spikes in 2021, EPS also peaks — same direction, strong alignment.
+In 2020 both ad spend and EPS were lower → consistent pattern.
+Advertising and EPS move in the same direction, suggesting a positive connection.
+KMB (Kimberly-Clark)
+Ad spend drops sharply in 2020; EPS also declines → aligned movement.
+Both spike again in 2021.
+Clear positive relationship over time.
+KO (Coca-Cola)
+Advertising increases in 2021, but EPS declines.
+Earlier years show opposite patterns.
+KO displays a negative relationship, meaning advertising spikes may occur during challenging years to defend market share, not to drive immediate EPS.
+PEP (PepsiCo)
+Advertising jumps in 2020; EPS rises in the following year.
+EPS lags behind ad spend changes.
+Possible lag effect: marketing investments may boost future EPS, not the same year's EPS.
+PG (Procter & Gamble)
+Advertising peaks in 2020; EPS also highest that year → aligned.
+Both fall in 2021.
+Strong year-on-year positive alignment, suggesting effective marketing ROI.
+Time-series takeaway:
+Most companies show advertising and EPS moving in the same direction, except Coca-Cola, which behaves differently (possibly due to restructuring or pandemic disruptions).
+
+3. Faceted Regression Plots: Advertising vs EPS (Yearly, per Company)
+Insight: Each company has a unique advertising–EPS relationship; some positive, some negative
+Here are the individual company interpretations:
+CL (Colgate-Palmolive)
+Slope slightly negative-
+Heavier advertising years correspond to slightly lower EPS.
+👉 Advertising may be a defensive investment, not EPS-accretive immediately
+KMB (Kimberly-Clark)
+Slope is positive.
+More advertising correlates with higher EPS.
+👉 Advertising seems to translate into better financial performance for KMB.
+KO (Coca-Cola)
+Trendline slopes downward.
+Higher marketing spend corresponds to lower EPS.
+👉 KO’s marketing spikes may occur in years of weaker demand (e.g., pandemic), meaning ads aren't the cause of lower EPS — they accompany difficult business conditions.
+PEP (PepsiCo)
+Positive mild slope.
+Advertising appears to offer small EPS uplift, though not very strong statistically.
+👉 Marketing works, but effect size is moderate.
+PG (Procter & Gamble)
+Clearly positive slope.
+Higher marketing spend → higher EPS.
+👉 For PG, marketing is an effective EPS driver, consistent with its brand-heavy portfolio.
