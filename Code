@@ -1,0 +1,186 @@
+pkgs <- c("readxl","dplyr","tidyr","lubridate","ggplot2","scales","zoo","readr")
+invisible(lapply(pkgs, function(p){
+  if(!requireNamespace(p, quietly = TRUE)) install.packages(p)
+  library(p, character.only = TRUE)
+}))
+
+input_file <- "C:/Users/LENOVO/Downloads/fmcg_sample_financials.xlsx"
+
+raw_q <- readxl::read_xlsx(input_file, guess_max = 5000)
+cat("Rows read:", nrow(raw_q), " Columns:", ncol(raw_q), "\n")
+print(head(raw_q))
+
+# 2) Clean and standardize columns
+q <- raw_q %>%
+  mutate(
+    date = as.Date(date),
+    year = lubridate::year(date),
+    quarter = lubridate::quarter(date),
+    # lower-case standard columns
+    revenue = as.numeric(revenue),
+    grossProfit = as.numeric(grossProfit),
+    operatingIncome = as.numeric(operatingIncome),
+    interestExpense = as.numeric(interestExpense),
+    incomeBeforeTax = as.numeric(incomeBeforeTax),
+    incomeTaxExpense = as.numeric(incomeTaxExpense),
+    netIncome = as.numeric(netIncome),
+    weightedAverageShsOut = as.numeric(weightedAverageShsOut),
+    eps_reported = as.numeric(eps_reported),
+    advertisingExpense = as.numeric(advertisingExpense),
+    sellingGeneralAndAdministrativeExpenses = as.numeric(sellingGeneralAndAdministrativeExpenses)
+  ) %>%
+  arrange(ticker, date)
+
+# 3) Compute EPS components and final EPS (quarterly)
+q <- q %>%
+  mutate(
+    eps_from_netincome = ifelse(!is.na(netIncome) & !is.na(weightedAverageShsOut) & weightedAverageShsOut != 0,
+                                netIncome / weightedAverageShsOut, NA_real_),
+    # prefer reported eps if present
+    eps_final = ifelse(!is.na(eps_reported), eps_reported, eps_from_netincome),
+    # advertising proxy: prefer advertisingExpense, else use SG&A
+    advertising_proxy = ifelse(!is.na(advertisingExpense), advertisingExpense, sellingGeneralAndAdministrativeExpenses)
+  )
+
+# 4) Aggregate to yearly
+yearly <- q %>%
+  group_by(ticker, year) %>%
+  summarise(
+    quarters = n(),
+    revenue_annual = sum(revenue, na.rm = TRUE),
+    netincome_annual = sum(netIncome, na.rm = TRUE),
+    avg_shares = mean(weightedAverageShsOut, na.rm = TRUE),
+    eps_year_calc = ifelse(!is.na(netincome_annual) & !is.na(avg_shares) & avg_shares != 0,
+                           netincome_annual / avg_shares, NA_real_),
+    advertising_annual = sum(advertising_proxy, na.rm = TRUE),
+    avg_quarterly_eps = mean(eps_final, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(ticker, year)
+
+# Save yearly summary
+readr::write_csv(yearly, "yearly_ad_eps_summary.csv")
+cat("Saved yearly_ad_eps_summary.csv\n")
+
+# 5) Year of max advertising spend per company
+max_ad_year <- yearly %>%
+  group_by(ticker) %>%
+  slice_max(order_by = advertising_annual, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(ticker, year_of_max_ad = year, advertising_annual)
+
+cat("=== Year with maximum advertising/marketing spend (per company) ===\n")
+print(max_ad_year)
+
+# 6) Plots: Yearly scatter with regression (faceted) and combined
+plot_df <- yearly %>% filter(!is.na(advertising_annual) & !is.na(eps_year_calc))
+
+p_scatter_facet <- ggplot(plot_df, aes(x = advertising_annual, y = eps_year_calc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "darkred") +
+  facet_wrap(~ ticker, scales = "free") +
+  labs(x = "Annual Advertising / Marketing Spend",
+       y = "Calculated Annual EPS (Net Income / Avg Shares)",
+       title = "Advertising Spend vs EPS (Yearly) — per company") +
+  theme_minimal()
+
+ggsave("scatter_facet_ad_vs_eps.png", p_scatter_facet, width = 12, height = 8)
+cat("Saved scatter_facet_ad_vs_eps.png\n")
+
+p_scatter_combined <- ggplot(plot_df, aes(x = advertising_annual, y = eps_year_calc, color = ticker)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Annual Advertising / Marketing Spend",
+       y = "Calculated Annual EPS",
+       title = "Advertising vs EPS (Yearly) — Combined") +
+  theme_minimal() +
+  scale_x_continuous(labels = scales::comma)
+
+ggsave("scatter_combined_ad_vs_eps.png", p_scatter_combined, width = 10, height = 6)
+cat("Saved scatter_combined_ad_vs_eps.png\n")
+
+# 7) Time series normalized overlay per company (z-scores)
+ts_df <- plot_df %>%
+  group_by(ticker) %>%
+  mutate(
+    ad_z = as.numeric(scale(advertising_annual)),
+    eps_z = as.numeric(scale(eps_year_calc))
+  ) %>%
+  ungroup()
+
+p_ts <- ggplot(ts_df, aes(x = year)) +
+  geom_line(aes(y = ad_z, color = "Advertising (z)")) +
+  geom_point(aes(y = ad_z, color = "Advertising (z)")) +
+  geom_line(aes(y = eps_z, color = "EPS (z)")) +
+  geom_point(aes(y = eps_z, color = "EPS (z)")) +
+  facet_wrap(~ ticker, scales = "free_x") +
+  labs(x = "Year", y = "Z-score (normalized)", title = "Normalized Yearly Advertising vs EPS (z-scores)") +
+  scale_color_manual(name = "", values = c("Advertising (z)" = "blue", "EPS (z)" = "red")) +
+  theme_minimal()
+
+ggsave("ts_normalized_ad_eps.png", p_ts, width = 12, height = 8)
+cat("Saved ts_normalized_ad_eps.png\n")
+
+# 8) Quarterly rolling correlation (8-quarter)
+q_plot_df <- q %>% filter(!is.na(advertising_proxy) & !is.na(eps_final)) %>% arrange(ticker, date)
+
+rolling_corrs <- do.call(rbind, lapply(split(q_plot_df, q_plot_df$ticker), function(d) {
+  if(nrow(d) < 8) return(NULL)
+  rc <- zoo::rollapply(data = d[, c("advertising_proxy","eps_final")],
+                       width = 8,
+                       FUN = function(m) cor(m[,1], m[,2], use = "complete.obs"),
+                       by.column = FALSE, align = "right")
+  data.frame(ticker = d$ticker[1], date = d$date[8:nrow(d)], rolling_corr = rc)
+}))
+
+if(!is.null(rolling_corrs) && nrow(rolling_corrs)>0) {
+  p_roll <- ggplot(rolling_corrs, aes(x = date, y = rolling_corr)) +
+    geom_line() +
+    facet_wrap(~ ticker, scales = "free_x") +
+    labs(title = "8-quarter rolling correlation between quarterly ad spend and quarterly EPS",
+         x = "Date", y = "Rolling correlation (8 quarters)") +
+    theme_minimal()
+  ggsave("rolling_corr_ad_eps.png", p_roll, width = 12, height = 6)
+  cat("Saved rolling_corr_ad_eps.png\n")
+} else {
+  cat("Not enough quarterly data to compute rolling correlations.\n")
+}
+
+# 9) Correlation table (yearly) per company
+cor_table <- plot_df %>%
+  group_by(ticker) %>%
+  summarise(
+    n_years = n(),
+    cor_ad_eps = cor(advertising_annual, eps_year_calc, use = "complete.obs"),
+    slope = ifelse(n_years >= 2, coef(lm(eps_year_calc ~ advertising_annual))[2], NA_real_),
+    p_value = ifelse(n_years >= 2, summary(lm(eps_year_calc ~ advertising_annual))$coefficients[2,4], NA_real_)
+  )
+
+print(cor_table)
+readr::write_csv(cor_table, "yearly_ad_eps_correlation.csv")
+cat("Saved yearly_ad_eps_correlation.csv\n")
+
+# 10) Save cleaned quarterly data too
+readr::write_csv(q, "quarterly_financials_clean.csv")
+cat("Saved quarterly_financials_clean.csv\n")
+
+cat("All done. Plots and CSVs saved in your working directory.\n")
+
+install.packages("png")
+install.packages("grid")
+
+library(png)
+library(grid)
+
+# View each saved plot
+img1 <- readPNG("scatter_facet_ad_vs_eps.png")
+grid::grid.raster(img1)
+
+img2 <- readPNG("scatter_combined_ad_vs_eps.png")
+grid::grid.raster(img2)
+
+img3 <- readPNG("ts_normalized_ad_eps.png")
+grid::grid.raster(img3)
+
+img4 <- readPNG("rolling_corr_ad_eps.png")
+grid::grid.raster(img4)
